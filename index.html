@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>Puzzle</title>
+    <style>
+        body {
+            background-color: black;
+            margin: 0 0;
+            padding: 0 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+<canvas id="main"></canvas>
+<script>
+
+const urlParams = new URLSearchParams(window.location.search)
+
+const DEFAULT_SIZE = 30
+const DEFAULT_FOODS_COUNT = 5
+
+function parseIntParam(name, def) {
+    try {
+        let s = parseInt(urlParams.get(name))
+        if (!isNaN(s) && s !== 0) {
+            return s
+        }
+    } catch (e) {
+        console.log("Not found " + name + " params")
+    }
+    return def
+}
+
+const CELL_SIZE = parseIntParam('size', DEFAULT_SIZE)
+const WALL_SIZE = parseIntParam('size', DEFAULT_SIZE)
+const RECT_SIZE = (2 * CELL_SIZE - WALL_SIZE)
+const RECT_OFFSET = (CELL_SIZE - RECT_SIZE) / 2
+
+const canvas = document.getElementById('main')
+const ctx = canvas.getContext("2d")
+
+const EMPTY = 0
+const WALL = -1
+const VISITED = 1
+const DONE = 2
+
+function getRandomInt(end) {
+    return Math.floor(Math.random() * end);
+}
+
+let id = 0
+
+const PREVIOUS_DIRECTION_WEIGHT = 5
+const REGULAR_WEIGHT = 2
+
+const UP = 1
+const DOWN = 2
+const RIGHT = 3
+const LEFT = 4
+
+// maze generating visualization parameters
+const VISUALIZE_GENERATING = false
+const TIMEOUT = 1
+const SKIP_STEPS = 1
+
+const LIGHT_DEPTH = 100
+const LIGHT_ITERATIONS = 100
+
+const FOOD_COUNT = parseIntParam('foods', DEFAULT_FOODS_COUNT)
+
+
+function calculateDirection(count, previous = -1) {
+    if (count === 1) {
+        return 0
+    }
+    if (previous === -1) {
+        return getRandomInt(count)
+    }
+    let sum = (count - 1) * REGULAR_WEIGHT + PREVIOUS_DIRECTION_WEIGHT
+    let rand = sum * Math.random()
+
+    for (let i = 0; i < count; i++) {
+        let w
+        if (previous === i) {
+            w = PREVIOUS_DIRECTION_WEIGHT
+        } else {
+            w = REGULAR_WEIGHT
+        }
+        rand -= w
+        if (rand <= 0) {
+            return i
+        }
+    }
+
+    return count - 1
+}
+
+function regenerate() {
+    let w = canvas.width
+    let h = canvas.height
+
+    let w_count = Math.floor(w / CELL_SIZE)
+    let h_count = Math.floor(h / CELL_SIZE)
+
+    maze = null
+    generateMaze(w_count, h_count)
+}
+
+function initMatrix(w, h) {
+    let result = Array(w)
+
+    for (let i = 0; i < w; i++) {
+        result[i] = Array(h)
+        for (let j = 0; j < h; j++) {
+            if (i % 2 === 1 && j % 2 === 1) {
+                result[i][j] = EMPTY
+            } else {
+                result[i][j] = WALL
+            }
+        }
+    }
+
+    return result
+}
+
+function copyMatrix(w, h, mat) {
+    let result = Array(w)
+
+    for (let i = 0; i < w; i++) {
+        result[i] = Array(h)
+        for (let j = 0; j < h; j++) {
+            result[i][j] = mat[i][j]
+        }
+    }
+
+    return result
+}
+
+function drawCell(x, y) {
+    ctx.fillRect(x * CELL_SIZE + RECT_OFFSET, y * CELL_SIZE + RECT_OFFSET, RECT_SIZE, RECT_SIZE)
+}
+
+function generateFood(mat) {
+    function randomPos(mat) {
+        let x = getRandomInt(mat.w / 2 - 1) * 2 + 1
+        let y = getRandomInt(mat.h / 2 - 1) * 2 + 1
+        return new Position(x, y)
+    }
+    let pos = randomPos(mat)
+    while (mat.getValue(pos) === WALL || pos.equals(playerPos)) {
+        pos = randomPos(mat)
+    }
+    return pos
+}
+
+function drawMatrix(mat) {
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, CELL_SIZE * mat.w, CELL_SIZE * mat.h)
+
+    for (let i = 0; i < mat.w; i++) {
+        for (let j = 0; j < mat.h; j++) {
+            if (mat.mat[i][j] === WALL) {
+                continue
+            }
+
+            if (mat.mat[i][j] === EMPTY) {
+                ctx.fillStyle = '#333333'
+            }
+            if (mat.mat[i][j] === VISITED) {
+                ctx.fillStyle = 'green'
+            }
+            if (mat.mat[i][j] === DONE) {
+                ctx.fillStyle = '#555555'
+            }
+            drawCell(i, j)
+        }
+    }
+
+    ctx.fillStyle = 'red'
+    drawCell(playerPos.x, playerPos.y)
+}
+
+class Position {
+    constructor(x, y) {
+        this.x = x
+        this.y = y
+    }
+
+    middle(pos) {
+        return new Position((pos.x + this.x) / 2, (pos.y + this.y) / 2)
+    }
+
+    equals(pos) {
+        return this.x === pos.x && this.y === pos.y
+    }
+}
+
+class Move {
+    constructor(pos, direction, distance = 0) {
+        this.pos = pos
+        this.direction = direction
+        this.distance = distance
+    }
+}
+
+class Matrix {
+    constructor(w, h, mat = null) {
+        this.w = w
+        this.h = h
+        if (mat === null) {
+            mat = initMatrix(w, h)
+        }
+        this.mat = mat
+    }
+
+    copy() {
+        let mat = copyMatrix(this.w, this.h, this.mat)
+        return new Matrix(this.w, this.h, mat)
+    }
+
+    reset() {
+        for (let i = 0; i < this.w; i++) {
+            for (let j = 0; j < this.h; j++) {
+                if (this.mat[i][j] !== WALL) {
+                    this.mat[i][j] = 0
+                }
+            }
+        }
+    }
+
+    getMoves(pos) {
+        let result = []
+
+        if (pos.x > 1) {
+            result.push(new Move(new Position(pos.x - 2, pos.y), LEFT))
+        }
+        if (pos.x < this.w - 2) {
+            result.push(new Move(new Position(pos.x + 2, pos.y), RIGHT))
+        }
+        if (pos.y > 1) {
+            result.push(new Move(new Position(pos.x, pos.y - 2), UP))
+        }
+        if (pos.y < this.h - 2) {
+            result.push(new Move(new Position(pos.x, pos.y + 2), DOWN))
+        }
+        return result
+    }
+
+    getNeighbors(pos) {
+        let result = []
+
+        if (pos.x > 0) {
+            result.push(new Position(pos.x - 1, pos.y))
+        }
+        if (pos.x < this.w - 1) {
+            result.push(new Position(pos.x + 1, pos.y))
+        }
+        if (pos.y > 0) {
+            result.push(new Position(pos.x, pos.y - 1))
+        }
+        if (pos.y < this.h - 1) {
+            result.push(new Position(pos.x, pos.y + 1))
+        }
+        return result
+    }
+
+    isLinked(pos1, pos2) {
+        return this.getValue(pos1.middle(pos2)) !== WALL
+    }
+
+    getValue(pos) {
+        return this.mat[pos.x][pos.y]
+    }
+
+    setValue(pos, value) {
+        this.mat[pos.x][pos.y] = value
+    }
+}
+
+
+function emulateLight(mat, pos, depth, count) {
+    for (let i = 0; i < count; i++) {
+        let p = pos
+        mat.setValue(p, mat.getValue(p) + 1)
+        for (let j = 0; j < depth; j++) {
+            let nbs = mat.getNeighbors(p)
+                .filter(p => mat.getValue(p) !== WALL)
+            p = nbs[getRandomInt(nbs.length)]
+            mat.setValue(p, mat.getValue(p) + 1)
+        }
+    }
+}
+
+function drawLight(mat, pos, depth, count) {
+    mat.reset()
+    emulateLight(mat, pos, depth, count)
+    ctx.fillStyle = '#FFFFFF'
+
+    let maxValue = 0
+    for (let i = 0; i < mat.w; i++) {
+        for (let j = 0; j < mat.h; j++) {
+            if (mat.mat[i][j] > maxValue) {
+                maxValue = mat.mat[i][j]
+            }
+        }
+    }
+
+    for (let i = 0; i < mat.w; i++) {
+        for (let j = 0; j < mat.h; j++) {
+            let val = mat.mat[i][j]
+            if (val > 0) {
+                let hex = Math.floor(val / maxValue * 255).toString(16)
+                if (hex.length === 1) {
+                    hex = '0' + hex
+                }
+                ctx.fillStyle = '#FFFFFF' + hex
+                drawCell(i, j)
+            }
+        }
+    }
+}
+
+function generateMazeStep(mat, move) {
+    let pos, direction, distance
+    if (move instanceof Move) {
+        pos = move.pos
+        direction = move.direction
+        distance = move.distance
+    } else {
+        pos = move
+        direction = -1
+        distance = 0
+    }
+    let moves = mat.getMoves(pos)
+        .filter(m => mat.getValue(m.pos) !== DONE)
+
+    if (moves.length === 0)
+        return null
+
+    let emptyNbs = moves.filter(m => mat.getValue(m.pos) === EMPTY)
+
+    if (emptyNbs.length !== 0) {
+        let previous = emptyNbs.findIndex(m => m.direction === direction)
+        let i = calculateDirection(emptyNbs.length, previous)
+        let nextMove = emptyNbs[i]
+        mat.setValue(pos, VISITED)
+        mat.setValue(pos.middle(nextMove.pos), VISITED)
+        nextMove.distance = distance + 1
+        return nextMove
+    }
+
+    let visitedNbs = moves.filter(
+        m => mat.getValue(m.pos) === VISITED && mat.isLinked(pos, m.pos)
+    )
+
+    if (visitedNbs.length !== 0) {
+        let nextMove = visitedNbs[0]
+        mat.setValue(pos, DONE)
+        mat.setValue(pos.middle(nextMove.pos), DONE)
+        nextMove.distance = distance - 1
+        return nextMove
+    }
+
+    return null
+}
+
+function generateMazeStepAndSleep(mat, pos, cur_id) {
+    if (pos === null) {
+        onComplete(mat)
+        return
+    }
+
+    if (cur_id !== id) {
+        return
+    }
+
+    for (let i = 0; i < SKIP_STEPS; i++) {
+        pos = generateMazeStep(mat, pos)
+        if (pos == null) {
+            break
+        }
+    }
+
+    drawMatrix(mat)
+
+    setTimeout(_ => generateMazeStepAndSleep(mat, pos, cur_id), TIMEOUT)
+}
+
+function drawFood() {
+    ctx.fillStyle = 'green'
+    for (let f of foods) {
+        drawCell(f.x, f.y)
+    }
+}
+
+function drawAll() {
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, CELL_SIZE * maze.w, CELL_SIZE * maze.h)
+
+    drawLight(lightMatrix, playerPos, LIGHT_DEPTH, LIGHT_ITERATIONS)
+
+    ctx.fillStyle = 'red'
+    drawCell(playerPos.x, playerPos.y)
+
+    drawFood()
+}
+
+function onComplete(matrix) {
+    maze = matrix
+    lightMatrix = maze.copy()
+
+    foods = []
+    for (let i = 0; i < FOOD_COUNT; i++) {
+        foods.push(generateFood(maze))
+    }
+
+    drawAll()
+}
+
+function generateMaze(w, h) {
+    let result = new Matrix(w, h)
+
+    let pos = new Position(playerPos.x, playerPos.y)
+
+    if (VISUALIZE_GENERATING) {
+        generateMazeStepAndSleep(result, pos, id)
+    } else {
+        while (true) {
+            pos = generateMazeStep(result, pos)
+            if (pos === null) {
+                break
+            }
+        }
+        onComplete(result)
+    }
+}
+
+function start() {
+    let w = window.innerWidth
+    let h = window.innerHeight
+
+    console.log("Resize to (" + w + ", " + h + ")")
+    canvas.width = w
+    canvas.height = h
+
+    id += 1
+
+    regenerate()
+}
+
+let playerPos = new Position(1, 1)
+let maze = null
+let lightMatrix = null
+let foods = []
+
+function onKeyPress(event) {
+    if (maze == null) {
+        return
+    }
+    let next = null
+    if (event.key === 'w') {
+        next = new Position(playerPos.x, playerPos.y - 1)
+    } else if (event.key === 's') {
+        next = new Position(playerPos.x, playerPos.y + 1)
+    } else if (event.key === 'a') {
+        next = new Position(playerPos.x - 1, playerPos.y)
+    } else if (event.key === 'd') {
+        next = new Position(playerPos.x + 1, playerPos.y)
+    }
+    if (next === null || next.x >= maze.w || next.y >= maze.h || maze.getValue(next) === WALL) {
+        return
+    }
+    playerPos = next
+
+    let toRemove = null
+    for (let f of foods) {
+        if (playerPos.x === f.x && playerPos.y === f.y) {
+            toRemove = f
+        }
+    }
+
+    if (toRemove !== null) {
+        foods = foods.filter(f => f !== toRemove)
+    }
+
+    drawAll()
+
+    if (foods.length === 0) {
+        start()
+    }
+}
+
+window.addEventListener('keypress', onKeyPress)
+
+window.addEventListener('resize', e => start())
+
+start()
+
+</script>
+</body>
+</html>
