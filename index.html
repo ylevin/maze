@@ -59,14 +59,22 @@ const UP = 1
 const DOWN = 2
 const RIGHT = 3
 const LEFT = 4
+const NO_DIRECTION = -1
 
 // maze generating visualization parameters
 const VISUALIZE_GENERATING = false
 const TIMEOUT = 1
 const SKIP_STEPS = 1
 
+// random walk light
 const LIGHT_DEPTH = 100
 const LIGHT_ITERATIONS = 100
+
+// DFS light
+const START_VALUE = 100
+const FRONT_MULTIPLIER = 0.9
+const SIDE_MULTIPLIER = 0.6
+
 
 const FOOD_COUNT = parseIntParam('foods', DEFAULT_FOODS_COUNT)
 
@@ -198,7 +206,7 @@ class Position {
 }
 
 class Move {
-    constructor(pos, direction, distance = 0) {
+    constructor(pos, direction = NO_DIRECTION, distance = 0) {
         this.pos = pos
         this.direction = direction
         this.distance = distance
@@ -252,16 +260,16 @@ class Matrix {
         let result = []
 
         if (pos.x > 0) {
-            result.push(new Position(pos.x - 1, pos.y))
+            result.push(new Move(new Position(pos.x - 1, pos.y), LEFT))
         }
         if (pos.x < this.w - 1) {
-            result.push(new Position(pos.x + 1, pos.y))
+            result.push(new Move(new Position(pos.x + 1, pos.y), RIGHT))
         }
         if (pos.y > 0) {
-            result.push(new Position(pos.x, pos.y - 1))
+            result.push(new Move(new Position(pos.x, pos.y - 1), UP))
         }
         if (pos.y < this.h - 1) {
-            result.push(new Position(pos.x, pos.y + 1))
+            result.push(new Move(new Position(pos.x, pos.y + 1), DOWN))
         }
         return result
     }
@@ -280,12 +288,13 @@ class Matrix {
 }
 
 
-function emulateLight(mat, pos, depth, count) {
-    for (let i = 0; i < count; i++) {
+function emulateLightRandomWalk(mat, pos) {
+    for (let i = 0; i < LIGHT_ITERATIONS; i++) {
         let p = pos
         mat.setValue(p, mat.getValue(p) + 1)
-        for (let j = 0; j < depth; j++) {
+        for (let j = 0; j < LIGHT_DEPTH; j++) {
             let nbs = mat.getNeighbors(p)
+                .map(m => m.pos)
                 .filter(p => mat.getValue(p) !== WALL)
             p = nbs[getRandomInt(nbs.length)]
             mat.setValue(p, mat.getValue(p) + 1)
@@ -293,9 +302,44 @@ function emulateLight(mat, pos, depth, count) {
     }
 }
 
-function drawLight(mat, pos, depth, count) {
+function emulateLightDFS(mat, pos) {
+    let nodes = [new Move(pos)]
+    let values = [START_VALUE]
+    mat.setValue(pos, START_VALUE)
+
+    while (nodes.length > 0) {
+        let newNodes = []
+        let newValues = []
+        for (let i = 0; i < nodes.length; i++) {
+            let node = nodes[i]
+            let value = values[i]
+
+            let nbs = mat.getNeighbors(node.pos)
+                .filter(m => mat.getValue(m.pos) === 0)
+
+            for (let nb of nbs) {
+                let newValue
+                if (nb.direction === node.direction || node.direction === NO_DIRECTION) {
+                    newValue = value * FRONT_MULTIPLIER
+                } else {
+                    newValue = value * SIDE_MULTIPLIER
+                }
+
+                if (Math.floor(newValue) > 0) {
+                    mat.setValue(nb.pos, Math.floor(newValue))
+                    newNodes.push(nb)
+                    newValues.push(newValue)
+                }
+            }
+        }
+        nodes = newNodes
+        values = newValues
+    }
+}
+
+function drawLight(mat, pos) {
     mat.reset()
-    emulateLight(mat, pos, depth, count)
+    emulateLightDFS(mat, pos)
     ctx.fillStyle = '#FFFFFF'
 
     let maxValue = 0
@@ -399,7 +443,7 @@ function drawAll() {
     ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, CELL_SIZE * maze.w, CELL_SIZE * maze.h)
 
-    drawLight(lightMatrix, playerPos, LIGHT_DEPTH, LIGHT_ITERATIONS)
+    drawLight(lightMatrix, playerPos)
 
     ctx.fillStyle = 'red'
     drawCell(playerPos.x, playerPos.y)
