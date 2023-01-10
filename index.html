@@ -465,24 +465,38 @@ const KEY_DOWN = 40
 const KEY_LEFT = 37
 const KEY_RIGHT = 39
 
-function onKeyDown(event) {
-    if (maze == null) {
-        return
-    }
+let keyPressed = new Set()
+
+function getNextMove(position, keyCode) {
     let next = null
-    if (event.keyCode === KEY_W || event.keyCode === KEY_UP) {
+    if (keyCode === KEY_W || keyCode === KEY_UP) {
         next = new Position(playerPos.x, playerPos.y - 1)
-    } else if (event.keyCode === KEY_S || event.keyCode === KEY_DOWN) {
+    } else if (keyCode === KEY_S || keyCode === KEY_DOWN) {
         next = new Position(playerPos.x, playerPos.y + 1)
-    } else if (event.keyCode === KEY_A || event.keyCode === KEY_LEFT) {
+    } else if (keyCode === KEY_A || keyCode === KEY_LEFT) {
         next = new Position(playerPos.x - 1, playerPos.y)
-    } else if (event.keyCode === KEY_D || event.keyCode === KEY_RIGHT) {
+    } else if (keyCode === KEY_D || keyCode === KEY_RIGHT) {
         next = new Position(playerPos.x + 1, playerPos.y)
     }
     if (next === null || next.x >= maze.w || next.y >= maze.h || maze.getValue(next) === WALL) {
+        return null
+    }
+    return next
+}
+
+function doMove() {
+    if (keyPressed.size === 0 || maze === null) {
         return
     }
-    playerPos = next
+
+    let nextMoves = Array.from(keyPressed)
+        .map(code => getNextMove(playerPos, code))
+        .filter(pos => pos !== null)
+
+    if (nextMoves.length === 0) {
+        return
+    }
+    playerPos = nextMoves[0]
 
     let toRemove = null
     for (let f of foods) {
@@ -502,9 +516,36 @@ function onKeyDown(event) {
     }
 }
 
-window.addEventListener('keydown', onKeyDown)
+function onKeyDown(event) {
+    let start = keyPressed.size === 0
+    keyPressed.add(event.keyCode)
+    if (start) {
+        moveCycle(true)
+    }
+}
 
+function onKeyUp(event) {
+    keyPressed.delete(event.keyCode)
+    if (keyPressed.size === 0 && moveId !== null) {
+        clearTimeout(moveId)
+    }
+}
+
+window.addEventListener('keydown', onKeyDown)
+window.addEventListener('keyup', onKeyUp)
 window.addEventListener('resize', e => start())
+
+const FIRST_MOVE_TIMEOUT = 200
+const MOVE_TIMEOUT = 100
+
+let moveId = null
+
+function moveCycle(first = false) {
+    if (keyPressed.size > 0) {
+        doMove()
+        moveId = setTimeout(moveCycle, first ? FIRST_MOVE_TIMEOUT : MOVE_TIMEOUT)
+    }
+}
 
 start()
 
