@@ -150,6 +150,10 @@ function drawCell(x, y) {
     ctx.fillRect(x * CELL_SIZE + RECT_OFFSET, y * CELL_SIZE + RECT_OFFSET, RECT_SIZE, RECT_SIZE)
 }
 
+function drawBorderCell(x, y) {
+    ctx.strokeRect(x * CELL_SIZE + RECT_OFFSET, y * CELL_SIZE + RECT_OFFSET, RECT_SIZE, RECT_SIZE)
+}
+
 function generateFood(mat) {
     function randomPos(mat) {
         let x = getRandomInt(mat.w / 2 - 1) * 2 + 1
@@ -451,6 +455,12 @@ function drawAll() {
 
     ctx.fillStyle = 'red'
     drawCell(playerPos.x, playerPos.y)
+
+    if (autoMovingWay !== null) {
+        let lastPos = autoMovingWay[autoMovingWay.length - 1]
+        ctx.strokeStyle = 'red'
+        drawBorderCell(lastPos.x, lastPos.y)
+    }
 
     drawFood()
 }
