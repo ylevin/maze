@@ -52,7 +52,7 @@ function getRandomInt(end) {
 
 let id = 0
 
-const PREVIOUS_DIRECTION_WEIGHT = 5
+const PREVIOUS_DIRECTION_WEIGHT = 2
 const REGULAR_WEIGHT = 2
 
 const UP = 1
@@ -72,8 +72,8 @@ const LIGHT_ITERATIONS = 100
 
 // DFS light
 const START_VALUE = 100
-const FRONT_MULTIPLIER = 0.9
-const SIDE_MULTIPLIER = 0.7
+const FRONT_MULTIPLIER = 0.85
+const SIDE_MULTIPLIER = 0.5
 
 
 const FOOD_COUNT = parseIntParam('foods', DEFAULT_FOODS_COUNT)
@@ -437,7 +437,7 @@ function generateMazeStepAndSleep(mat, pos, cur_id) {
 
     drawMatrix(mat)
 
-    setTimeout(_ => generateMazeStepAndSleep(mat, pos, cur_id), TIMEOUT)
+    setTimeout(() => generateMazeStepAndSleep(mat, pos, cur_id), TIMEOUT)
 }
 
 function drawFood() {
@@ -629,7 +629,8 @@ function isLitPos(pos) {
     return lightMatrix.getValue(pos) > 0
 }
 
-DEPTH_LIMIT = 1000
+const DEFAULT_DEPTH_LIMIT = 15
+const DEPTH_LIMIT = parseIntParam('depth_limit', DEFAULT_DEPTH_LIMIT)
 
 function findWay(mat, startPos, endPos) {
     let state = [[startPos]]
@@ -659,8 +660,6 @@ function findWay(mat, startPos, endPos) {
         }
         state = newState
     }
-
-    console.log("Can't find a way")
     return null
 }
 
@@ -680,7 +679,7 @@ function animateMoving() {
 
     afterMove()
 
-    setTimeout(_ => animateMoving(), MOVE_TIMEOUT)
+    setTimeout(animateMoving, MOVE_TIMEOUT)
 }
 
 function moveByClick(x, y) {
