@@ -73,7 +73,7 @@ const LIGHT_ITERATIONS = 100
 // DFS light
 const START_VALUE = 100
 const FRONT_MULTIPLIER = 0.9
-const SIDE_MULTIPLIER = 0.6
+const SIDE_MULTIPLIER = 0.7
 
 
 const FOOD_COUNT = parseIntParam('foods', DEFAULT_FOODS_COUNT)
@@ -226,6 +226,10 @@ class Matrix {
     copy() {
         let mat = copyMatrix(this.w, this.h, this.mat)
         return new Matrix(this.w, this.h, mat)
+    }
+
+    positionId(pos) {
+        return pos.x + pos.y * this.w
     }
 
     reset() {
@@ -542,6 +546,10 @@ function doMove() {
     }
     playerPos = nextMoves[0]
 
+    afterMove()
+}
+
+function afterMove() {
     let toRemove = null
     for (let f of foods) {
         if (playerPos.x === f.x && playerPos.y === f.y) {
@@ -556,11 +564,17 @@ function doMove() {
     drawAll()
 
     if (foods.length === 0) {
+        autoMovingWay = null
         start()
     }
 }
 
 function onKeyDown(event) {
+    if (event.altKey) {
+        return
+    }
+
+    autoMovingWay = null
     let start = keyPressed.size === 0
     keyPressed.add(event.keyCode)
     if (start) {
@@ -572,6 +586,7 @@ function onKeyUp(event) {
     keyPressed.delete(event.keyCode)
     if (keyPressed.size === 0 && moveId !== null) {
         clearTimeout(moveId)
+        moveId = null
     }
 }
 
@@ -584,12 +599,134 @@ const MOVE_TIMEOUT = 100
 
 let moveId = null
 
+let mouseDown = false
+
 function moveCycle(first = false) {
     if (keyPressed.size > 0) {
         doMove()
         moveId = setTimeout(moveCycle, first ? FIRST_MOVE_TIMEOUT : MOVE_TIMEOUT)
     }
 }
+
+function getMatrixPosFromScreenPos(x, y) {
+    return new Position(
+        Math.floor(x / CELL_SIZE),
+        Math.floor(y / CELL_SIZE)
+    )
+}
+
+function isLitPos(pos) {
+    return lightMatrix.getValue(pos) > 0
+}
+
+DEPTH_LIMIT = 1000
+
+function findWay(mat, startPos, endPos) {
+    let state = [[startPos]]
+    let usedIds = new Set()
+    usedIds.add(mat.positionId(startPos))
+
+    for (let i = 0; i < DEPTH_LIMIT; i++) {
+        let newState = []
+        for (let stack of state) {
+            let head = stack[stack.length - 1]
+            let nbs = mat
+                .getNeighbors(head)
+                .map(m => m.pos)
+                .filter(p => isLitPos(p))
+
+            for (let nb of nbs) {
+                let posId = mat.positionId(nb)
+                if (!usedIds.has(posId)) {
+                    let newStack = stack.concat([nb])
+                    if (nb.x === endPos.x && nb.y === endPos.y) {
+                        return newStack
+                    }
+                    newState.push(newStack)
+                    usedIds.add(posId)
+                }
+            }
+        }
+        state = newState
+    }
+
+    console.log("Can't find a way")
+    return null
+}
+
+let autoMovingWay = null
+let autoMovingIdx = 0
+
+function animateMoving() {
+    if (autoMovingWay !== null && autoMovingIdx >= autoMovingWay.length) {
+        autoMovingWay = null
+    }
+
+    if (autoMovingWay === null) {
+        return
+    }
+
+    playerPos = autoMovingWay[autoMovingIdx++]
+
+    afterMove()
+
+    setTimeout(_ => animateMoving(), MOVE_TIMEOUT)
+}
+
+function moveByClick(x, y) {
+    if (moveId !== null) {
+        return
+    }
+
+    let pos = getMatrixPosFromScreenPos(x, y)
+    if (pos.x < 0 || pos.y < 0 || pos.x >= maze.w || pos.y >= maze.h) {
+        return
+    }
+
+    if (!isLitPos(pos) || (pos.x === playerPos.x && pos.y === playerPos.y)) {
+        return
+    }
+
+    let way = findWay(lightMatrix, playerPos, pos)
+
+    if (way === null) {
+        return
+    }
+
+    let start = autoMovingWay === null
+    autoMovingIdx = 1
+    autoMovingWay = way
+
+    if (start) {
+        animateMoving()
+    }
+}
+
+function onMouseDown(e) {
+    if (e.button !== 0) {
+        return
+    }
+    mouseDown = true
+    moveByClick(e.clientX, e.clientY)
+}
+
+function onMouseUp(e) {
+    if (e.button !== 0) {
+        return
+    }
+    mouseDown = false
+    moveByClick(e.clientX, e.clientY)
+}
+
+function onMouseMove(e) {
+    if (mouseDown) {
+        moveByClick(e.clientX, e.clientY)
+    }
+}
+
+canvas.addEventListener("mousedown", onMouseDown)
+canvas.addEventListener("mouseup", onMouseUp)
+canvas.addEventListener("mousemove", onMouseMove)
 
 start()
 
