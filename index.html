@@ -449,7 +449,7 @@ function drawFood() {
 
 function drawAll() {
     ctx.fillStyle = '#000000'
-    ctx.fillRect(0, 0, CELL_SIZE * maze.w, CELL_SIZE * maze.h)
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
 
     drawLight(lightMatrix, playerPos)
 
