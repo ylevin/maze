@@ -66,12 +66,15 @@ const VISUALIZE_GENERATING = false
 const TIMEOUT = 1
 const SKIP_STEPS = 1
 
+const MAX_LIGHT = 255
+
 // random walk light
 const LIGHT_DEPTH = 100
 const LIGHT_ITERATIONS = 100
+const LIGHT_RANDOM_DEVIATION = 0.2
 
 // DFS light
-const START_VALUE = 100
+const START_VALUE = MAX_LIGHT
 const FRONT_MULTIPLIER = 0.85
 const SIDE_MULTIPLIER = 0.5
 
@@ -308,12 +311,31 @@ function emulateLightRandomWalk(mat, pos) {
             mat.setValue(p, mat.getValue(p) + 1)
         }
     }
+
+    let maxValue = 0
+    for (let i = 0; i < mat.w; i++) {
+        for (let j = 0; j < mat.h; j++) {
+            if (mat.mat[i][j] > maxValue) {
+                maxValue = mat.mat[i][j]
+            }
+        }
+    }
+
+    for (let i = 0; i < mat.w; i++) {
+        for (let j = 0; j < mat.h; j++) {
+            if (mat.mat[i][j] !== WALL) {
+                mat.mat[i][j] = Math.floor(mat.mat[i][j] / maxValue * MAX_LIGHT)
+            }
+        }
+    }
 }
 
 function emulateLightDFS(mat, pos) {
     let nodes = [new Move(pos)]
     let values = [START_VALUE]
     mat.setValue(pos, START_VALUE)
+
+    let result = []
 
     while (nodes.length > 0) {
         let newNodes = []
@@ -337,11 +359,19 @@ function emulateLightDFS(mat, pos) {
                     mat.setValue(nb.pos, Math.floor(newValue))
                     newNodes.push(nb)
                     newValues.push(newValue)
+                    result.push(nb.pos)
                 }
             }
         }
         nodes = newNodes
         values = newValues
+    }
+
+    if (LIGHT_RANDOM_DEVIATION !== 0) {
+        for (let pos of result) {
+            let dev = 1 + (Math.random() * 2 - 1) * LIGHT_RANDOM_DEVIATION
+            mat.setValue(pos, Math.floor(mat.getValue(pos) * dev))
+        }
     }
 }
 
@@ -350,22 +380,15 @@ function drawLight(mat, pos) {
     emulateLightDFS(mat, pos)
     ctx.fillStyle = '#FFFFFF'
 
-    let maxValue = 0
-    for (let i = 0; i < mat.w; i++) {
-        for (let j = 0; j < mat.h; j++) {
-            if (mat.mat[i][j] > maxValue) {
-                maxValue = mat.mat[i][j]
-            }
-        }
-    }
-
     for (let i = 0; i < mat.w; i++) {
         for (let j = 0; j < mat.h; j++) {
             let val = mat.mat[i][j]
             if (val > 0) {
-                let hex = Math.floor(val / maxValue * 255).toString(16)
+                let hex = val.toString(16)
                 if (hex.length === 1) {
                     hex = '0' + hex
+                } else if (hex.length > 2) {
+                    hex = 'ff'
                 }
                 ctx.fillStyle = '#FFFFFF' + hex
                 drawCell(i, j)
